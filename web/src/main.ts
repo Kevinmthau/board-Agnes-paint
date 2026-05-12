@@ -6,6 +6,7 @@ import {
   BoardContactType,
   type BoardContact,
 } from "@harrishill/board-sdk";
+import { processGlyphContactFrame } from "./glyphFrame";
 
 type SurfaceContact = Pick<
   BoardContact,
@@ -325,21 +326,34 @@ function wireBoardInput(): void {
   }
 
   boardInputCallback = (contacts) => {
-    for (const contact of contacts) {
-      if (contact.type === BoardContactType.Glyph) {
-        applyGlyphContact(contact);
-      }
-    }
+    const glyphContacts = contacts.filter(isGlyphContact);
+    processGlyphContactFrame(glyphContacts, {
+      isEndedContact: isEndedGlyphContact,
+      removeContact: removeGlyphContact,
+      applyContact: applyGlyphContact,
+    });
     // Board finger contacts mirror DOM pointer/touch events, so only glyphs are handled here.
     renderPreview();
   };
   Board.input.subscribe(boardInputCallback);
 }
 
+function isGlyphContact(contact: BoardContact): contact is SurfaceContact {
+  return contact.type === BoardContactType.Glyph;
+}
+
+function isEndedGlyphContact(contact: SurfaceContact): boolean {
+  return contact.phase === BoardContactPhase.Ended || contact.phase === BoardContactPhase.Canceled;
+}
+
+function removeGlyphContact(contact: SurfaceContact): void {
+  liveGlyphs.delete(contact.contactId);
+  stampedContactIds.delete(contact.contactId);
+}
+
 function applyGlyphContact(contact: SurfaceContact): void {
-  if (contact.phase === BoardContactPhase.Ended || contact.phase === BoardContactPhase.Canceled) {
-    liveGlyphs.delete(contact.contactId);
-    stampedContactIds.delete(contact.contactId);
+  if (isEndedGlyphContact(contact)) {
+    removeGlyphContact(contact);
     return;
   }
 
