@@ -6,6 +6,7 @@ import {
   BoardContactType,
   type BoardContact,
 } from "@harrishill/board-sdk";
+import { clearEndedGlyphContact, clearUnconfiguredGlyphReading } from "./glyphContactState";
 import { processGlyphContactFrame } from "./glyphFrame";
 
 type SurfaceContact = Pick<
@@ -125,6 +126,7 @@ const liveGlyphs = new Map<number, SurfaceContact>();
 const stampedContactIds = new Set<number>();
 const suppressedContactIds = new Set<number>();
 const pendingContactSamples = new Map<number, ContactSamples>();
+const glyphContactState = { liveGlyphs, stampedContactIds, suppressedContactIds, pendingContactSamples };
 const recentStampPlacements: { glyphId: number; x: number; y: number; t: number }[] = [];
 const strokes: Stroke[] = [];
 const stamps: Stamp[] = [];
@@ -360,10 +362,7 @@ function isEndedGlyphContact(contact: SurfaceContact): boolean {
 }
 
 function removeGlyphContact(contact: SurfaceContact): void {
-  liveGlyphs.delete(contact.contactId);
-  stampedContactIds.delete(contact.contactId);
-  suppressedContactIds.delete(contact.contactId);
-  pendingContactSamples.delete(contact.contactId);
+  clearEndedGlyphContact(contact.contactId, glyphContactState);
 }
 
 function applyGlyphContact(contact: SurfaceContact): void {
@@ -373,9 +372,7 @@ function applyGlyphContact(contact: SurfaceContact): void {
   }
 
   if (!stampConfigs[contact.glyphId]) {
-    liveGlyphs.delete(contact.contactId);
-    suppressedContactIds.delete(contact.contactId);
-    pendingContactSamples.delete(contact.contactId);
+    clearUnconfiguredGlyphReading(contact.contactId, glyphContactState);
     return;
   }
 

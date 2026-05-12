@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import {
+  clearEndedGlyphContact,
+  clearUnconfiguredGlyphReading,
+  type GlyphContactState,
+} from "../src/glyphContactState";
 import { processGlyphContactFrame } from "../src/glyphFrame";
 
 type TestContact = {
@@ -81,6 +86,26 @@ test("suppressed higher-id duplicate does not block lower-id duplicate in the sa
   assert.deepEqual(stamps, [1]);
   assert.equal(stampedContactIds.has(2), false);
   assert.equal(suppressedContactIds.has(2), true);
+});
+
+test("unconfigured glyph readings keep duplicate suppression until contact ends", () => {
+  const contact: TestContact = { contactId: 2, glyphId: 7, phase: "active", x: 104, y: 104 };
+  const state: GlyphContactState<TestContact, { glyphIds: number[] }> = {
+    liveGlyphs: new Map([[contact.contactId, contact]]),
+    stampedContactIds: new Set(),
+    suppressedContactIds: new Set([contact.contactId]),
+    pendingContactSamples: new Map([[contact.contactId, { glyphIds: [7] }]]),
+  };
+
+  clearUnconfiguredGlyphReading(contact.contactId, state);
+
+  assert.equal(state.liveGlyphs.has(contact.contactId), false);
+  assert.equal(state.pendingContactSamples.has(contact.contactId), false);
+  assert.equal(state.suppressedContactIds.has(contact.contactId), true);
+
+  clearEndedGlyphContact(contact.contactId, state);
+
+  assert.equal(state.suppressedContactIds.has(contact.contactId), false);
 });
 
 function isDuplicateCommittedLiveGlyphContact(
