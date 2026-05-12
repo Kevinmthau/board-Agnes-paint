@@ -224,6 +224,8 @@ if [ "$WEB_TARGET" = "raw" ]; then
     BUILD_WEB=0
 fi
 
+configure_android_build_env
+
 if [ "$STATUS" -eq 1 ]; then
     run_bdb status
 fi
@@ -240,8 +242,6 @@ gradle_args=(assembleDebug)
 if [ "$WEB_TARGET" = "raw" ]; then
     gradle_args+=("-Pweb=raw")
 fi
-
-configure_android_build_env
 
 (cd "$ROOT_DIR/android" && ./gradlew "${gradle_args[@]}")
 
