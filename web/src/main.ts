@@ -137,8 +137,12 @@ let brushSize = Number(sizeInput.value);
 let activeStroke: Stroke | null = null;
 let activePointerId: number | null = null;
 let activeTouchId: number | null = null;
+let activeStrokeSource: "pen" | "finger" | "mouse" | null = null;
 let pointerInputUntil = 0;
+let lastPenContactAt = 0;
 let lastInputLabel = "waiting";
+
+const PEN_SESSION_GRACE_MS = 1500;
 let nextStrokeId = 1;
 let nextStampId = 1;
 let boardInputCallback: TouchFrameCallback | null = null;
@@ -231,7 +235,19 @@ function renderToolState(): void {
 
 function wireStylusDrawing(): void {
   surface.addEventListener("pointerdown", (event) => {
-    if (activeStroke || !canDrawWithPointer(event)) {
+    if (event.pointerType === "pen") {
+      lastPenContactAt = performance.now();
+    }
+
+    if (activeStroke) {
+      if (event.pointerType === "pen" && activeStrokeSource !== "pen") {
+        abortActiveStroke();
+      } else {
+        return;
+      }
+    }
+
+    if (!canDrawWithPointer(event)) {
       return;
     }
 
@@ -240,12 +256,25 @@ function wireStylusDrawing(): void {
     surface.setPointerCapture(event.pointerId);
     activePointerId = event.pointerId;
     activeStroke = createStroke(pointFromPointer(event));
+    activeStrokeSource = event.pointerType === "pen"
+      ? "pen"
+      : event.pointerType === "mouse"
+        ? "mouse"
+        : "finger";
     noteInput(`pointer ${event.pointerType || "unknown"}`);
     renderInk();
     renderToolState();
   });
 
   surface.addEventListener("pointermove", (event) => {
+    if (event.pointerType === "pen") {
+      lastPenContactAt = performance.now();
+      if (activeStroke && activeStrokeSource !== "pen") {
+        abortActiveStroke();
+        return;
+      }
+    }
+
     if (!activeStroke || activePointerId !== event.pointerId) {
       return;
     }
@@ -263,7 +292,12 @@ function wireStylusDrawing(): void {
   surface.addEventListener("pointercancel", endStroke);
 
   surface.addEventListener("touchstart", (event) => {
-    if (performance.now() < pointerInputUntil || activeStroke || isMultiTouch(event)) {
+    if (
+      performance.now() < pointerInputUntil ||
+      activeStroke ||
+      isMultiTouch(event) ||
+      penSessionActive()
+    ) {
       return;
     }
 
@@ -276,6 +310,7 @@ function wireStylusDrawing(): void {
     event.preventDefault();
     activeTouchId = touch.identifier;
     activeStroke = createStroke(point);
+    activeStrokeSource = "finger";
     noteInput("touch fallback");
     renderInk();
     renderToolState();
@@ -306,10 +341,47 @@ function canDrawWithPointer(event: PointerEvent): boolean {
     return false;
   }
 
+  if (event.pointerType !== "pen" && event.pointerType !== "mouse" && penSessionActive()) {
+    return false;
+  }
+
   return event.pointerType === "pen" ||
     event.pointerType === "touch" ||
     event.pointerType === "mouse" ||
     event.pointerType === "";
+}
+
+function penSessionActive(): boolean {
+  return performance.now() - lastPenContactAt < PEN_SESSION_GRACE_MS;
+}
+
+function abortActiveStroke(): void {
+  if (!activeStroke) {
+    return;
+  }
+
+  const aborted = activeStroke;
+  const strokeIndex = strokes.lastIndexOf(aborted);
+  if (strokeIndex !== -1) {
+    strokes.splice(strokeIndex, 1);
+  }
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const entry = history[index];
+    if (entry.type === "stroke" && entry.stroke === aborted) {
+      history.splice(index, 1);
+      break;
+    }
+  }
+
+  if (activePointerId !== null && surface.hasPointerCapture(activePointerId)) {
+    surface.releasePointerCapture(activePointerId);
+  }
+  activePointerId = null;
+  activeTouchId = null;
+  activeStroke = null;
+  activeStrokeSource = null;
+  renderInk();
+  renderToolState();
 }
 
 function endStroke(event: PointerEvent): void {
@@ -320,6 +392,7 @@ function endStroke(event: PointerEvent): void {
   event.preventDefault();
   activePointerId = null;
   activeStroke = null;
+  activeStrokeSource = null;
   if (surface.hasPointerCapture(event.pointerId)) {
     surface.releasePointerCapture(event.pointerId);
   }
@@ -333,6 +406,7 @@ function endTouchStroke(event: TouchEvent): void {
   event.preventDefault();
   activeTouchId = null;
   activeStroke = null;
+  activeStrokeSource = null;
 }
 
 function wireBoardInput(): void {
