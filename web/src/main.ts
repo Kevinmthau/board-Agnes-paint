@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 import {
   Board,
   BoardContactPhase,
@@ -41,6 +43,16 @@ type Stamp = {
 type HistoryAction =
   | { type: "stroke"; stroke: Stroke }
   | { type: "stamp"; stamp: Stamp };
+
+type TouchFrameCallback = (contacts: ReadonlyArray<BoardContact>) => void;
+
+type StampLock = {
+  glyphId: number;
+  x: number;
+  y: number;
+  lastSeenAt: number;
+  contactIds: Set<number>;
+};
 
 const stampConfigs: Readonly<Record<number, StampConfig>> = {
   1: {
@@ -87,6 +99,8 @@ const stampConfigs: Readonly<Record<number, StampConfig>> = {
 
 const stampSize = 92;
 const minPressure = 0.35;
+const stampLockRadius = stampSize * 0.65;
+const stampLockGraceMs = 900;
 
 const surface = getElement<HTMLElement>("surface");
 const stampCanvas = getElement<HTMLCanvasElement>("stamp-layer");
@@ -107,6 +121,7 @@ const previewCtx = canvasContext(previewCanvas);
 const stampImages = preloadStampImages(stampConfigs);
 const liveGlyphs = new Map<number, SurfaceContact>();
 const stampedContactIds = new Set<number>();
+const stampLocks: StampLock[] = [];
 const strokes: Stroke[] = [];
 const stamps: Stamp[] = [];
 const history: HistoryAction[] = [];
@@ -120,6 +135,7 @@ let pointerInputUntil = 0;
 let lastInputLabel = "waiting";
 let nextStrokeId = 1;
 let nextStampId = 1;
+let boardInputCallback: TouchFrameCallback | null = null;
 
 renderStatus();
 renderStampStrip();
@@ -128,6 +144,15 @@ wireControls();
 wireStylusDrawing();
 wireBoardInput();
 window.addEventListener("resize", resizeCanvases);
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    if (Board.isOnDevice && boardInputCallback) {
+      Board.input.unsubscribe(boardInputCallback);
+    }
+    boardInputCallback = null;
+  });
+}
 
 function renderStatus(): void {
   const mode = Board.isOnDevice ? "Board" : "Preview";
@@ -309,7 +334,7 @@ function wireBoardInput(): void {
     return;
   }
 
-  Board.input.subscribe((contacts) => {
+  boardInputCallback = (contacts) => {
     for (const contact of contacts) {
       if (contact.type === BoardContactType.Glyph) {
         applyGlyphContact(contact);
@@ -317,13 +342,18 @@ function wireBoardInput(): void {
     }
     // Board finger contacts mirror DOM pointer/touch events, so only glyphs are handled here.
     renderPreview();
-  });
+  };
+  Board.input.subscribe(boardInputCallback);
 }
 
 function applyGlyphContact(contact: SurfaceContact): void {
+  const now = performance.now();
+  expireStampLocks(now);
+
   if (contact.phase === BoardContactPhase.Ended || contact.phase === BoardContactPhase.Canceled) {
     liveGlyphs.delete(contact.contactId);
     stampedContactIds.delete(contact.contactId);
+    releaseStampLockContact(contact.contactId, now);
     return;
   }
 
@@ -333,10 +363,27 @@ function applyGlyphContact(contact: SurfaceContact): void {
   }
 
   liveGlyphs.set(contact.contactId, contact);
-  if (!stampedContactIds.has(contact.contactId)) {
+
+  const existingLock = findStampLock(contact);
+  if (existingLock) {
+    updateStampLock(existingLock, contact, now);
     stampedContactIds.add(contact.contactId);
-    addStampFromGlyph(contact);
+    return;
   }
+
+  if (stampedContactIds.has(contact.contactId)) {
+    return;
+  }
+
+  stampedContactIds.add(contact.contactId);
+  stampLocks.push({
+    glyphId: contact.glyphId,
+    x: contact.x,
+    y: contact.y,
+    lastSeenAt: now,
+    contactIds: new Set([contact.contactId]),
+  });
+  addStampFromGlyph(contact);
 }
 
 function addStampFromGlyph(contact: SurfaceContact): void {
@@ -353,6 +400,42 @@ function addStampFromGlyph(contact: SurfaceContact): void {
   history.push({ type: "stamp", stamp });
   renderStamps();
   renderToolState();
+}
+
+function findStampLock(contact: SurfaceContact): StampLock | null {
+  for (const lock of stampLocks) {
+    if (
+      lock.glyphId === contact.glyphId &&
+      (lock.contactIds.has(contact.contactId) ||
+        Math.hypot(contact.x - lock.x, contact.y - lock.y) <= stampLockRadius)
+    ) {
+      return lock;
+    }
+  }
+  return null;
+}
+
+function updateStampLock(lock: StampLock, contact: SurfaceContact, now: number): void {
+  lock.x = contact.x;
+  lock.y = contact.y;
+  lock.lastSeenAt = now;
+  lock.contactIds.add(contact.contactId);
+}
+
+function releaseStampLockContact(contactId: number, now: number): void {
+  for (const lock of stampLocks) {
+    if (lock.contactIds.delete(contactId)) {
+      lock.lastSeenAt = now;
+    }
+  }
+}
+
+function expireStampLocks(now: number): void {
+  for (let index = stampLocks.length - 1; index >= 0; index -= 1) {
+    if (now - stampLocks[index].lastSeenAt > stampLockGraceMs) {
+      stampLocks.splice(index, 1);
+    }
+  }
 }
 
 function createStroke(firstPoint: Point): Stroke {
