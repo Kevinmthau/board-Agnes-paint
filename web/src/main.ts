@@ -8,6 +8,7 @@ import {
 } from "@harrishill/board-sdk";
 import { clearEndedGlyphContact, clearUnconfiguredGlyphReading } from "./glyphContactState";
 import { processGlyphContactFrame } from "./glyphFrame";
+import { isPenContactEvent, isPenSessionActive } from "./stylusInput";
 
 type SurfaceContact = Pick<
   BoardContact,
@@ -139,7 +140,7 @@ let activePointerId: number | null = null;
 let activeTouchId: number | null = null;
 let activeStrokeSource: "pen" | "finger" | "mouse" | null = null;
 let pointerInputUntil = 0;
-let lastPenContactAt = 0;
+let lastPenContactAt = Number.NEGATIVE_INFINITY;
 let lastInputLabel = "waiting";
 
 const PEN_SESSION_GRACE_MS = 1500;
@@ -267,7 +268,7 @@ function wireStylusDrawing(): void {
   });
 
   surface.addEventListener("pointermove", (event) => {
-    if (event.pointerType === "pen") {
+    if (isActivePenContact(event)) {
       lastPenContactAt = performance.now();
       if (activeStroke && activeStrokeSource !== "pen") {
         abortActiveStroke();
@@ -352,7 +353,12 @@ function canDrawWithPointer(event: PointerEvent): boolean {
 }
 
 function penSessionActive(): boolean {
-  return performance.now() - lastPenContactAt < PEN_SESSION_GRACE_MS;
+  return isPenSessionActive(performance.now(), lastPenContactAt, PEN_SESSION_GRACE_MS);
+}
+
+function isActivePenContact(event: PointerEvent): boolean {
+  return isPenContactEvent(event) ||
+    (event.pointerType === "pen" && activePointerId === event.pointerId && activeStrokeSource === "pen");
 }
 
 function abortActiveStroke(): void {

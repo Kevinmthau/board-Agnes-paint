@@ -6,6 +6,7 @@ import {
   type GlyphContactState,
 } from "../src/glyphContactState";
 import { processGlyphContactFrame } from "../src/glyphFrame";
+import { isPenContactEvent, isPenSessionActive } from "../src/stylusInput";
 
 type TestContact = {
   contactId: number;
@@ -106,6 +107,18 @@ test("unconfigured glyph readings keep duplicate suppression until contact ends"
   clearEndedGlyphContact(contact.contactId, state);
 
   assert.equal(state.suppressedContactIds.has(contact.contactId), false);
+});
+
+test("inactive pen session does not suppress startup touch input", () => {
+  assert.equal(isPenSessionActive(0, Number.NEGATIVE_INFINITY, 1500), false);
+});
+
+test("pen hover is not treated as pen contact", () => {
+  assert.equal(isPenContactEvent({ pointerType: "pen", buttons: 0, pressure: 0 }), false);
+  assert.equal(isPenContactEvent({ pointerType: "pen", buttons: 1, pressure: 0 }), true);
+  assert.equal(isPenContactEvent({ pointerType: "pen", buttons: 2, pressure: 0 }), false);
+  assert.equal(isPenContactEvent({ pointerType: "pen", buttons: 0, pressure: 0.2 }), true);
+  assert.equal(isPenContactEvent({ pointerType: "touch", buttons: 1, pressure: 0.5 }), false);
 });
 
 function isDuplicateCommittedLiveGlyphContact(
