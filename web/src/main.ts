@@ -123,6 +123,7 @@ const previewCtx = canvasContext(previewCanvas);
 const stampImages = preloadStampImages(stampConfigs);
 const liveGlyphs = new Map<number, SurfaceContact>();
 const stampedContactIds = new Set<number>();
+const suppressedContactIds = new Set<number>();
 const pendingContactSamples = new Map<number, ContactSamples>();
 const recentStampPlacements: { glyphId: number; x: number; y: number; t: number }[] = [];
 const strokes: Stroke[] = [];
@@ -361,6 +362,7 @@ function isEndedGlyphContact(contact: SurfaceContact): boolean {
 function removeGlyphContact(contact: SurfaceContact): void {
   liveGlyphs.delete(contact.contactId);
   stampedContactIds.delete(contact.contactId);
+  suppressedContactIds.delete(contact.contactId);
   pendingContactSamples.delete(contact.contactId);
 }
 
@@ -372,6 +374,7 @@ function applyGlyphContact(contact: SurfaceContact): void {
 
   if (!stampConfigs[contact.glyphId]) {
     liveGlyphs.delete(contact.contactId);
+    suppressedContactIds.delete(contact.contactId);
     pendingContactSamples.delete(contact.contactId);
     return;
   }
@@ -379,7 +382,7 @@ function applyGlyphContact(contact: SurfaceContact): void {
   liveGlyphs.set(contact.contactId, contact);
   abortStrokesNear(contact);
 
-  if (stampedContactIds.has(contact.contactId)) {
+  if (stampedContactIds.has(contact.contactId) || suppressedContactIds.has(contact.contactId)) {
     return;
   }
 
@@ -398,12 +401,13 @@ function applyGlyphContact(contact: SurfaceContact): void {
   const stableGlyphId = pickMostCommonGlyphId(samples.glyphIds);
   const stableContact: SurfaceContact = { ...samples.latest, glyphId: stableGlyphId };
   pendingContactSamples.delete(contact.contactId);
-  stampedContactIds.add(contact.contactId);
 
   if (isDuplicateLiveGlyphContact(stableContact) || isRecentStampPlacementNearby(stableContact)) {
+    suppressedContactIds.add(contact.contactId);
     return;
   }
 
+  stampedContactIds.add(contact.contactId);
   addStampFromGlyph(stableContact);
 }
 
