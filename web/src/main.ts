@@ -541,7 +541,10 @@ function drawStamp(ctx: CanvasRenderingContext2D, stamp: Stamp, alpha: number): 
   ctx.rotate((stamp.orientation * Math.PI) / 180);
 
   if (image?.complete && image.naturalWidth > 0) {
-    ctx.drawImage(image, -halfSize, -halfSize, stamp.size, stamp.size);
+    const scale = stamp.size / Math.max(image.naturalWidth, image.naturalHeight);
+    const drawWidth = image.naturalWidth * scale;
+    const drawHeight = image.naturalHeight * scale;
+    ctx.drawImage(image, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
   } else {
     ctx.strokeStyle = "#111827";
     ctx.lineWidth = 2;
@@ -589,6 +592,12 @@ function isNearLiveGlyph(point: Point): boolean {
       return true;
     }
   }
+  pruneRecentStampPlacements();
+  for (const placement of recentStampPlacements) {
+    if (Math.hypot(point.x - placement.x, point.y - placement.y) <= liveGlyphProximity) {
+      return true;
+    }
+  }
   return false;
 }
 
@@ -596,7 +605,6 @@ function isDuplicateLiveGlyphContact(contact: SurfaceContact): boolean {
   for (const glyph of liveGlyphs.values()) {
     if (
       glyph.contactId !== contact.contactId &&
-      glyph.glyphId === contact.glyphId &&
       Math.hypot(contact.x - glyph.x, contact.y - glyph.y) <= liveGlyphProximity
     ) {
       return true;
@@ -606,19 +614,20 @@ function isDuplicateLiveGlyphContact(contact: SurfaceContact): boolean {
 }
 
 function isRecentStampPlacementNearby(contact: SurfaceContact): boolean {
-  const now = performance.now();
-  while (recentStampPlacements.length && now - recentStampPlacements[0].t > recentStampGraceMs) {
-    recentStampPlacements.shift();
-  }
+  pruneRecentStampPlacements();
   for (const placement of recentStampPlacements) {
-    if (
-      placement.glyphId === contact.glyphId &&
-      Math.hypot(contact.x - placement.x, contact.y - placement.y) <= liveGlyphProximity
-    ) {
+    if (Math.hypot(contact.x - placement.x, contact.y - placement.y) <= liveGlyphProximity) {
       return true;
     }
   }
   return false;
+}
+
+function pruneRecentStampPlacements(): void {
+  const now = performance.now();
+  while (recentStampPlacements.length && now - recentStampPlacements[0].t > recentStampGraceMs) {
+    recentStampPlacements.shift();
+  }
 }
 
 function isMultiTouch(event: TouchEvent): boolean {
