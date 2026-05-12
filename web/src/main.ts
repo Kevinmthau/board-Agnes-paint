@@ -107,7 +107,6 @@ const previewCtx = canvasContext(previewCanvas);
 const stampImages = preloadStampImages(stampConfigs);
 const liveGlyphs = new Map<number, SurfaceContact>();
 const stampedContactIds = new Set<number>();
-const activeBoardStrokes = new Map<number, Stroke>();
 const strokes: Stroke[] = [];
 const stamps: Stamp[] = [];
 const history: HistoryAction[] = [];
@@ -311,43 +310,14 @@ function wireBoardInput(): void {
   }
 
   Board.input.subscribe((contacts) => {
-    let inkChanged = false;
     for (const contact of contacts) {
       if (contact.type === BoardContactType.Glyph) {
         applyGlyphContact(contact);
-      } else {
-        inkChanged = applyBoardDrawContact(contact) || inkChanged;
       }
     }
-    if (inkChanged) {
-      renderInk();
-    }
+    // Board finger contacts mirror DOM pointer/touch events, so only glyphs are handled here.
     renderPreview();
   });
-}
-
-function applyBoardDrawContact(contact: SurfaceContact): boolean {
-  if (contact.phase === BoardContactPhase.Ended || contact.phase === BoardContactPhase.Canceled) {
-    activeBoardStrokes.delete(contact.contactId);
-    return false;
-  }
-
-  const point = pointFromContact(contact);
-  const existingStroke = activeBoardStrokes.get(contact.contactId);
-  if (!existingStroke || contact.phase === BoardContactPhase.Began) {
-    const stroke = createStroke(point);
-    activeBoardStrokes.set(contact.contactId, stroke);
-    noteInput("Board finger stream");
-    renderToolState();
-    return true;
-  }
-
-  if (contact.phase === BoardContactPhase.Moved) {
-    appendPointIfMoved(existingStroke, point);
-    return true;
-  }
-
-  return false;
 }
 
 function applyGlyphContact(contact: SurfaceContact): void {
@@ -363,7 +333,7 @@ function applyGlyphContact(contact: SurfaceContact): void {
   }
 
   liveGlyphs.set(contact.contactId, contact);
-  if (contact.phase === BoardContactPhase.Began && !stampedContactIds.has(contact.contactId)) {
+  if (!stampedContactIds.has(contact.contactId)) {
     stampedContactIds.add(contact.contactId);
     addStampFromGlyph(contact);
   }
@@ -564,14 +534,6 @@ function pointFromTouch(touch: Touch): Point {
     x: touch.clientX - rect.left,
     y: touch.clientY - rect.top,
     pressure: force,
-  };
-}
-
-function pointFromContact(contact: SurfaceContact): Point {
-  return {
-    x: contact.x,
-    y: contact.y,
-    pressure: 0.7,
   };
 }
 
