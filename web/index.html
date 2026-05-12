@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <title>Paint Board</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <main id="surface" aria-label="Paint Board drawing surface">
+      <canvas id="stamp-layer"></canvas>
+      <canvas id="ink-layer"></canvas>
+      <canvas id="preview-layer"></canvas>
+    </main>
+
+    <aside id="toolbar" aria-label="Drawing tools">
+      <header class="toolbar-header">
+        <h1>Paint Board</h1>
+        <div id="device-status" class="status-chip"></div>
+      </header>
+
+      <section class="tool-section" aria-label="Brush color">
+        <h2>Color</h2>
+        <div id="color-controls" class="swatches">
+          <button class="swatch" type="button" data-color="#111827" aria-label="Black"></button>
+          <button class="swatch" type="button" data-color="#e11d48" aria-label="Rose"></button>
+          <button class="swatch" type="button" data-color="#2563eb" aria-label="Blue"></button>
+          <button class="swatch" type="button" data-color="#059669" aria-label="Green"></button>
+          <button class="swatch" type="button" data-color="#f59e0b" aria-label="Amber"></button>
+          <button class="swatch" type="button" data-color="#7c3aed" aria-label="Violet"></button>
+        </div>
+      </section>
+
+      <section class="tool-section" aria-label="Brush size">
+        <div class="section-row">
+          <h2>Size</h2>
+          <output id="size-value" for="brush-size"></output>
+        </div>
+        <input id="brush-size" type="range" min="2" max="28" step="1" value="8" />
+      </section>
+
+      <section class="tool-section" aria-label="Edit controls">
+        <div class="button-row">
+          <button id="undo-btn" type="button">Undo</button>
+          <button id="clear-ink-btn" type="button">Clear ink</button>
+          <button id="clear-stamps-btn" type="button">Clear stamps</button>
+        </div>
+      </section>
+
+      <section class="tool-section" aria-label="Stamp set">
+        <div class="section-row">
+          <h2>Stamps</h2>
+          <span id="metrics"></span>
+        </div>
+        <div id="stamp-strip" class="stamp-strip"></div>
+      </section>
+    </aside>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
