@@ -690,7 +690,7 @@ function isNearLiveGlyph(point: Point): boolean {
 function isDuplicateLiveGlyphContact(contact: SurfaceContact): boolean {
   for (const glyph of liveGlyphs.values()) {
     if (
-      glyph.contactId !== contact.contactId &&
+      glyph.contactId < contact.contactId &&
       glyph.glyphId === contact.glyphId &&
       Math.hypot(contact.x - glyph.x, contact.y - glyph.y) <= liveGlyphProximity
     ) {
