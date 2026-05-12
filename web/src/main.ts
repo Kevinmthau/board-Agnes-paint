@@ -24,6 +24,12 @@ type Stroke = {
   color: string;
   width: number;
   points: Point[];
+  startedAt: number;
+};
+
+type ContactSamples = {
+  glyphIds: number[];
+  latest: SurfaceContact;
 };
 
 type StampConfig = {
@@ -94,6 +100,8 @@ const stampSize = 92;
 const liveGlyphProximity = stampSize * 0.75;
 const recentStampGraceMs = 1200;
 const crossGlyphFlickerMs = 250;
+const glyphStabilityFrames = 3;
+const strokeAbortWindowMs = 400;
 const minPressure = 0.35;
 
 const surface = getElement<HTMLElement>("surface");
@@ -115,6 +123,7 @@ const previewCtx = canvasContext(previewCanvas);
 const stampImages = preloadStampImages(stampConfigs);
 const liveGlyphs = new Map<number, SurfaceContact>();
 const stampedContactIds = new Set<number>();
+const pendingContactSamples = new Map<number, ContactSamples>();
 const recentStampPlacements: { glyphId: number; x: number; y: number; t: number }[] = [];
 const strokes: Stroke[] = [];
 const stamps: Stamp[] = [];
@@ -352,6 +361,7 @@ function isEndedGlyphContact(contact: SurfaceContact): boolean {
 function removeGlyphContact(contact: SurfaceContact): void {
   liveGlyphs.delete(contact.contactId);
   stampedContactIds.delete(contact.contactId);
+  pendingContactSamples.delete(contact.contactId);
 }
 
 function applyGlyphContact(contact: SurfaceContact): void {
@@ -362,22 +372,96 @@ function applyGlyphContact(contact: SurfaceContact): void {
 
   if (!stampConfigs[contact.glyphId]) {
     liveGlyphs.delete(contact.contactId);
+    pendingContactSamples.delete(contact.contactId);
     return;
   }
 
   liveGlyphs.set(contact.contactId, contact);
+  abortStrokesNear(contact);
 
   if (stampedContactIds.has(contact.contactId)) {
     return;
   }
 
-  if (isDuplicateLiveGlyphContact(contact) || isRecentStampPlacementNearby(contact)) {
-    stampedContactIds.add(contact.contactId);
+  let samples = pendingContactSamples.get(contact.contactId);
+  if (!samples) {
+    samples = { glyphIds: [], latest: contact };
+    pendingContactSamples.set(contact.contactId, samples);
+  }
+  samples.glyphIds.push(contact.glyphId);
+  samples.latest = contact;
+
+  if (samples.glyphIds.length < glyphStabilityFrames) {
     return;
   }
 
+  const stableGlyphId = pickMostCommonGlyphId(samples.glyphIds);
+  const stableContact: SurfaceContact = { ...samples.latest, glyphId: stableGlyphId };
+  pendingContactSamples.delete(contact.contactId);
   stampedContactIds.add(contact.contactId);
-  addStampFromGlyph(contact);
+
+  if (isDuplicateLiveGlyphContact(stableContact) || isRecentStampPlacementNearby(stableContact)) {
+    return;
+  }
+
+  addStampFromGlyph(stableContact);
+}
+
+function pickMostCommonGlyphId(ids: number[]): number {
+  const counts = new Map<number, number>();
+  let best = ids[0];
+  let bestCount = 0;
+  for (const id of ids) {
+    const next = (counts.get(id) ?? 0) + 1;
+    counts.set(id, next);
+    if (next > bestCount) {
+      best = id;
+      bestCount = next;
+    }
+  }
+  return best;
+}
+
+function abortStrokesNear(contact: SurfaceContact): void {
+  const now = performance.now();
+  let mutated = false;
+  for (let index = strokes.length - 1; index >= 0; index -= 1) {
+    const stroke = strokes[index];
+    if (now - stroke.startedAt > strokeAbortWindowMs) {
+      continue;
+    }
+    const first = stroke.points[0];
+    if (!first) {
+      continue;
+    }
+    if (Math.hypot(first.x - contact.x, first.y - contact.y) > liveGlyphProximity) {
+      continue;
+    }
+
+    strokes.splice(index, 1);
+    removeHistoryStroke(stroke.id);
+    if (activeStroke === stroke) {
+      activeStroke = null;
+      activePointerId = null;
+      activeTouchId = null;
+    }
+    mutated = true;
+  }
+
+  if (mutated) {
+    renderInk();
+    renderToolState();
+  }
+}
+
+function removeHistoryStroke(id: number): void {
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const action = history[index];
+    if (action.type === "stroke" && action.stroke.id === id) {
+      history.splice(index, 1);
+      return;
+    }
+  }
 }
 
 function addStampFromGlyph(contact: SurfaceContact): void {
@@ -408,6 +492,7 @@ function createStroke(firstPoint: Point): Stroke {
     color: brushColor,
     width: brushSize,
     points: [firstPoint],
+    startedAt: performance.now(),
   };
   nextStrokeId += 1;
   strokes.push(stroke);
