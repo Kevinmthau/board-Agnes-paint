@@ -92,6 +92,7 @@ const stampConfigs: Readonly<Record<number, StampConfig>> = {
 
 const stampSize = 92;
 const liveGlyphProximity = stampSize * 0.75;
+const recentStampGraceMs = 1200;
 const minPressure = 0.35;
 
 const surface = getElement<HTMLElement>("surface");
@@ -113,6 +114,7 @@ const previewCtx = canvasContext(previewCanvas);
 const stampImages = preloadStampImages(stampConfigs);
 const liveGlyphs = new Map<number, SurfaceContact>();
 const stampedContactIds = new Set<number>();
+const recentStampPlacements: { glyphId: number; x: number; y: number; t: number }[] = [];
 const strokes: Stroke[] = [];
 const stamps: Stamp[] = [];
 const history: HistoryAction[] = [];
@@ -368,7 +370,7 @@ function applyGlyphContact(contact: SurfaceContact): void {
     return;
   }
 
-  if (isDuplicateLiveGlyphContact(contact)) {
+  if (isDuplicateLiveGlyphContact(contact) || isRecentStampPlacementNearby(contact)) {
     stampedContactIds.add(contact.contactId);
     return;
   }
@@ -389,6 +391,12 @@ function addStampFromGlyph(contact: SurfaceContact): void {
   nextStampId += 1;
   stamps.push(stamp);
   history.push({ type: "stamp", stamp });
+  recentStampPlacements.push({
+    glyphId: contact.glyphId,
+    x: contact.x,
+    y: contact.y,
+    t: performance.now(),
+  });
   renderStamps();
   renderToolState();
 }
@@ -590,6 +598,22 @@ function isDuplicateLiveGlyphContact(contact: SurfaceContact): boolean {
       glyph.contactId !== contact.contactId &&
       glyph.glyphId === contact.glyphId &&
       Math.hypot(contact.x - glyph.x, contact.y - glyph.y) <= liveGlyphProximity
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isRecentStampPlacementNearby(contact: SurfaceContact): boolean {
+  const now = performance.now();
+  while (recentStampPlacements.length && now - recentStampPlacements[0].t > recentStampGraceMs) {
+    recentStampPlacements.shift();
+  }
+  for (const placement of recentStampPlacements) {
+    if (
+      placement.glyphId === contact.glyphId &&
+      Math.hypot(contact.x - placement.x, contact.y - placement.y) <= liveGlyphProximity
     ) {
       return true;
     }
