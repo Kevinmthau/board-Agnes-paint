@@ -46,14 +46,6 @@ type HistoryAction =
 
 type TouchFrameCallback = (contacts: ReadonlyArray<BoardContact>) => void;
 
-type StampLock = {
-  glyphId: number;
-  x: number;
-  y: number;
-  lastSeenAt: number;
-  contactIds: Set<number>;
-};
-
 const stampConfigs: Readonly<Record<number, StampConfig>> = {
   1: {
     glyphId: 1,
@@ -99,8 +91,6 @@ const stampConfigs: Readonly<Record<number, StampConfig>> = {
 
 const stampSize = 92;
 const minPressure = 0.35;
-const stampLockRadius = stampSize * 0.65;
-const stampLockGraceMs = 900;
 
 const surface = getElement<HTMLElement>("surface");
 const stampCanvas = getElement<HTMLCanvasElement>("stamp-layer");
@@ -121,7 +111,6 @@ const previewCtx = canvasContext(previewCanvas);
 const stampImages = preloadStampImages(stampConfigs);
 const liveGlyphs = new Map<number, SurfaceContact>();
 const stampedContactIds = new Set<number>();
-const stampLocks: StampLock[] = [];
 const strokes: Stroke[] = [];
 const stamps: Stamp[] = [];
 const history: HistoryAction[] = [];
@@ -347,13 +336,9 @@ function wireBoardInput(): void {
 }
 
 function applyGlyphContact(contact: SurfaceContact): void {
-  const now = performance.now();
-  expireStampLocks(now);
-
   if (contact.phase === BoardContactPhase.Ended || contact.phase === BoardContactPhase.Canceled) {
     liveGlyphs.delete(contact.contactId);
     stampedContactIds.delete(contact.contactId);
-    releaseStampLockContact(contact.contactId, now);
     return;
   }
 
@@ -364,25 +349,11 @@ function applyGlyphContact(contact: SurfaceContact): void {
 
   liveGlyphs.set(contact.contactId, contact);
 
-  const existingLock = findStampLock(contact);
-  if (existingLock) {
-    updateStampLock(existingLock, contact, now);
-    stampedContactIds.add(contact.contactId);
-    return;
-  }
-
   if (stampedContactIds.has(contact.contactId)) {
     return;
   }
 
   stampedContactIds.add(contact.contactId);
-  stampLocks.push({
-    glyphId: contact.glyphId,
-    x: contact.x,
-    y: contact.y,
-    lastSeenAt: now,
-    contactIds: new Set([contact.contactId]),
-  });
   addStampFromGlyph(contact);
 }
 
@@ -400,42 +371,6 @@ function addStampFromGlyph(contact: SurfaceContact): void {
   history.push({ type: "stamp", stamp });
   renderStamps();
   renderToolState();
-}
-
-function findStampLock(contact: SurfaceContact): StampLock | null {
-  for (const lock of stampLocks) {
-    if (
-      lock.glyphId === contact.glyphId &&
-      (lock.contactIds.has(contact.contactId) ||
-        Math.hypot(contact.x - lock.x, contact.y - lock.y) <= stampLockRadius)
-    ) {
-      return lock;
-    }
-  }
-  return null;
-}
-
-function updateStampLock(lock: StampLock, contact: SurfaceContact, now: number): void {
-  lock.x = contact.x;
-  lock.y = contact.y;
-  lock.lastSeenAt = now;
-  lock.contactIds.add(contact.contactId);
-}
-
-function releaseStampLockContact(contactId: number, now: number): void {
-  for (const lock of stampLocks) {
-    if (lock.contactIds.delete(contactId)) {
-      lock.lastSeenAt = now;
-    }
-  }
-}
-
-function expireStampLocks(now: number): void {
-  for (let index = stampLocks.length - 1; index >= 0; index -= 1) {
-    if (now - stampLocks[index].lastSeenAt > stampLockGraceMs) {
-      stampLocks.splice(index, 1);
-    }
-  }
 }
 
 function createStroke(firstPoint: Point): Stroke {
