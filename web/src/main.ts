@@ -90,6 +90,7 @@ const stampConfigs: Readonly<Record<number, StampConfig>> = {
 };
 
 const stampSize = 92;
+const liveGlyphProximity = stampSize * 0.75;
 const minPressure = 0.35;
 
 const surface = getElement<HTMLElement>("surface");
@@ -353,6 +354,11 @@ function applyGlyphContact(contact: SurfaceContact): void {
     return;
   }
 
+  if (isDuplicateLiveGlyphContact(contact)) {
+    stampedContactIds.add(contact.contactId);
+    return;
+  }
+
   stampedContactIds.add(contact.contactId);
   addStampFromGlyph(contact);
 }
@@ -557,7 +563,20 @@ function pointFromTouch(touch: Touch): Point {
 
 function isNearLiveGlyph(point: Point): boolean {
   for (const glyph of liveGlyphs.values()) {
-    if (Math.hypot(point.x - glyph.x, point.y - glyph.y) <= stampSize * 0.75) {
+    if (Math.hypot(point.x - glyph.x, point.y - glyph.y) <= liveGlyphProximity) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isDuplicateLiveGlyphContact(contact: SurfaceContact): boolean {
+  for (const glyph of liveGlyphs.values()) {
+    if (
+      glyph.contactId !== contact.contactId &&
+      glyph.glyphId === contact.glyphId &&
+      Math.hypot(contact.x - glyph.x, contact.y - glyph.y) <= liveGlyphProximity
+    ) {
       return true;
     }
   }
