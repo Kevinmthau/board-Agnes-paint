@@ -93,6 +93,7 @@ const stampConfigs: Readonly<Record<number, StampConfig>> = {
 const stampSize = 92;
 const liveGlyphProximity = stampSize * 0.75;
 const recentStampGraceMs = 1200;
+const crossGlyphFlickerMs = 250;
 const minPressure = 0.35;
 
 const surface = getElement<HTMLElement>("surface");
@@ -605,6 +606,7 @@ function isDuplicateLiveGlyphContact(contact: SurfaceContact): boolean {
   for (const glyph of liveGlyphs.values()) {
     if (
       glyph.contactId !== contact.contactId &&
+      glyph.glyphId === contact.glyphId &&
       Math.hypot(contact.x - glyph.x, contact.y - glyph.y) <= liveGlyphProximity
     ) {
       return true;
@@ -615,8 +617,15 @@ function isDuplicateLiveGlyphContact(contact: SurfaceContact): boolean {
 
 function isRecentStampPlacementNearby(contact: SurfaceContact): boolean {
   pruneRecentStampPlacements();
+  const now = performance.now();
   for (const placement of recentStampPlacements) {
-    if (Math.hypot(contact.x - placement.x, contact.y - placement.y) <= liveGlyphProximity) {
+    if (Math.hypot(contact.x - placement.x, contact.y - placement.y) > liveGlyphProximity) {
+      continue;
+    }
+    if (placement.glyphId === contact.glyphId) {
+      return true;
+    }
+    if (now - placement.t <= crossGlyphFlickerMs) {
       return true;
     }
   }
