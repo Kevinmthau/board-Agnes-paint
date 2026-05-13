@@ -78,6 +78,7 @@ task copyWebAssets(type: Copy) {
                     "web/dist not found. Run: cd ../../web && npm install --include=dev && npm run build\n" +
                             "Or build the harness with -Pweb=raw to skip this step.")
         }
+        delete 'src/main/assets/web'
     }
 }
 
