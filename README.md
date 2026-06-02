@@ -21,6 +21,14 @@ Generated Board Web SDK game scaffold.
 Android treats the package/application id as the install identity. The display
 label is only the name shown to users.
 
+## Download APK
+
+Download the latest debug APK from the GitHub release:
+
+https://github.com/Kevinmthau/board-Agnes-paint/releases/latest/download/paint-board-debug.apk
+
+This APK is debug-signed for testing and local installation.
+
 ## Build
 
 ```bash

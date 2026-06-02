@@ -1,0 +1,73 @@
+name: Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to create or update.
+        required: true
+        default: v0.1.0
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build and publish debug APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android packages
+        run: sdkmanager "platforms;android-34" "platform-tools"
+
+      - name: Build APK
+        run: ./scripts/build_android.sh
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: paint-board-debug.apk
+          path: Builds/Android/paint-board-debug.apk
+          if-no-files-found: error
+
+      - name: Publish GitHub release APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          apk_path="Builds/Android/paint-board-debug.apk"
+          release_title="Paint Board ${RELEASE_TAG}"
+          release_notes="Debug APK for Paint Board."
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "${apk_path}#paint-board-debug.apk" --clobber
+          else
+            gh release create "$RELEASE_TAG" "${apk_path}#paint-board-debug.apk" \
+              --title "$release_title" \
+              --notes "$release_notes" \
+              --target "$GITHUB_SHA"
+          fi
